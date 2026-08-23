@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .card {
+      background:white;
+      padding:40px 35px;
+      border-radius:20px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.3);
+      max-width:400px;
+      width:100%;
+    }
+    h2 { margin-bottom:8px; color:#1a1a1a; }
+    p { color:#6b7280; margin-bottom:20px; }
+    input { width:100%; padding:12px; border-radius:10px; border:1px solid #ddd; font-size:16px; margin-bottom:15px; }
+    button { width:100%; padding:12px; border:none; border-radius:10px; background:#2563eb; color:white; font-size:16px; font-weight:600; cursor:pointer; transition:0.3s; }
+    button:hover { background:#1d4ed8; }
+    .error { color:#ef4444; font-size:14px; margin-top:10px; }
+    .link { margin-top:15px; text-align:center; }
+    .link a { color:#2563eb; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔑 Login</h2>
+    <p>Enter your username</p>
+    <form id="loginForm">
+      <input type="text" id="username" placeholder="Username" required />
+      <button type="submit">Login</button>
+      <div id="error" class="error"></div>
+    </form>
+    <div class="link">Don't have an account? <a href="/register">Register</a></div>
+  </div>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const errorDiv = document.getElementById('error');
+      if (!username) return errorDiv.textContent = 'Please enter your username';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.setItem('username', username);
+          window.location.href = '/dashboard';
+        } else {
+          errorDiv.textContent = data.error || 'Login failed';
+        }
+      } catch (err) {
+        errorDiv.textContent = 'Network error';
+      }
+    });
+  </script>
+</body>
+</html>

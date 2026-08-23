@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Trip Tracker – Live</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', sans-serif; height:100vh; overflow:hidden; background:#f0f2f5; }
+    .app { display:flex; height:100vh; }
+
+    .map-pane { flex:1; position:relative; background:#e8e8e8; }
+    #map { width:100%; height:100%; }
+    .map-controls {
+      position:absolute; top:20px; left:20px; z-index:1000;
+      background:rgba(255,255,255,0.9); padding:12px 18px; border-radius:12px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.2);
+    }
+    .map-controls strong { display:block; margin-bottom:4px; }
+    .map-controls .back { color:#2563eb; cursor:pointer; font-weight:600; }
+
+    .sidebar {
+      width:420px; background:white; border-left:1px solid #e0e0e0;
+      display:flex; flex-direction:column;
+      box-shadow:-4px 0 15px rgba(0,0,0,0.05);
+      overflow-y:auto;
+    }
+    .sidebar-header {
+      padding:16px 20px;
+      background:linear-gradient(135deg,#2563eb,#1d4ed8);
+      color:white;
+      flex-shrink:0;
+    }
+    .sidebar-header h2 { font-size:20px; margin-bottom:2px; }
+    .sidebar-header p { font-size:13px; opacity:0.9; }
+
+    .trip-info {
+      padding:12px 20px;
+      background:#eef2ff;
+      border-bottom:1px solid #e0e0e0;
+      font-size:14px;
+      flex-shrink:0;
+    }
+    .trip-info span { font-weight:600; }
+
+    .admin-controls {
+      padding:10px 20px;
+      background:#f8f9fa;
+      border-bottom:1px solid #e0e0e0;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .admin-controls input { padding:6px 10px; border-radius:6px; border:1px solid #ddd; flex:1; min-width:120px; }
+    .admin-controls button { padding:6px 14px; border:none; border-radius:6px; background:#2563eb; color:white; cursor:pointer; font-weight:600; }
+    .admin-controls button.danger { background:#ef4444; }
+    .admin-controls button:hover { opacity:0.8; }
+
+    .leaderboard {
+      flex:1;
+      padding:16px 20px;
+      overflow-y:auto;
+    }
+    .leaderboard h3 { margin-bottom:12px; color:#1a1a1a; }
+    .leaderboard-item {
+      display:flex;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:#f8f9fa;
+      border-radius:8px;
+      margin-bottom:8px;
+      border-left:4px solid #2563eb;
+      align-items:center;
+    }
+    .leaderboard-item.inactive { border-left-color:#94a3b8; opacity:0.6; }
+    .status-dot {
+      width:8px; height:8px; border-radius:50%;
+      display:inline-block;
+      margin-right:6px;
+    }
+    .status-dot.active { background:#22c55e; animation:pulse 2s infinite; }
+    .status-dot.inactive { background:#94a3b8; }
+    @keyframes pulse { 0%{opacity:1;}50%{opacity:0.5;}100%{opacity:1;} }
+    .lb-name { font-weight:500; }
+    .lb-stats { text-align:right; font-size:13px; }
+    .lb-stats .dist { font-weight:700; color:#2563eb; }
+    .remove-btn { background:#ef4444; color:white; border:none; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:12px; margin-left:8px; }
+    .remove-btn:hover { background:#dc2626; }
+
+    .toast {
+      position:fixed; bottom:30px; left:50%; transform:translateX(-50%);
+      background:#1a1a1a; color:white; padding:12px 25px; border-radius:8px;
+      font-size:14px; z-index:9999; opacity:0; transition:opacity 0.3s;
+      pointer-events:none;
+      white-space:nowrap;
+    }
+    .toast.show { opacity:1; }
+
+    @media (max-width:768px) {
+      .app { flex-direction:column; }
+      .sidebar { width:100%; height:50vh; border-left:none; border-top:1px solid #e0e0e0; }
+      .map-pane { height:50vh; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="map-pane">
+    <div id="map"></div>
+    <div class="map-controls">
+      <strong>📍 Trip Tracker</strong>
+      <span id="activeCount">0 active</span>
+      <div class="back" onclick="window.location.href='/dashboard'">← Back</div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2 id="tripNameHeader">Loading...</h2>
+      <p id="tripDestHeader"></p>
+    </div>
+
+    <div class="trip-info">
+      <div><strong>Members:</strong> <span id="memberCount">0</span></div>
+      <div><strong>Your distance:</strong> <span id="myDistance">0.00</span> km</div>
+      <div><strong>Your steps:</strong> <span id="mySteps">0</span></div>
+    </div>
+
+    <div id="adminControls" class="admin-controls" style="display:none;">
+      <input type="text" id="addMemberInput" placeholder="Username to add" />
+      <button id="addMemberBtn">Add</button>
+    </div>
+
+    <div class="leaderboard" id="leaderboardContainer">
+      <h3>🏆 Leaderboard</h3>
+      <div id="leaderboardList"><p style="color:#94a3b8;">Loading members...</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ─── Get tripId from URL ─────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const tripId = params.get('tripId');
+  const username = localStorage.getItem('username');
+  if (!username) { window.location.href = '/'; }
+  if (!tripId) { window.location.href = '/dashboard'; }
+
+  // ─── State ──────────────────────────────────────────────────────
+  let map, markers = {}, polylines = {}, socket;
+  let currentUser = username, currentTripId = parseInt(tripId);
+  let allPaths = {};
+  let watchId = null, isTracking = false, registered = false;
+  let myDistance = 0, mySteps = 0, lastPos = null;
+  let isAdmin = false;
+  let members = [];
+
+  // ─── DOM refs ──────────────────────────────────────────────────
+  const toast = document.getElementById('toast');
+  const leaderboardList = document.getElementById('leaderboardList');
+  const memberCount = document.getElementById('memberCount');
+  const myDistanceSpan = document.getElementById('myDistance');
+  const myStepsSpan = document.getElementById('mySteps');
+  const activeCount = document.getElementById('activeCount');
+  const tripNameHeader = document.getElementById('tripNameHeader');
+  const tripDestHeader = document.getElementById('tripDestHeader');
+  const adminControls = document.getElementById('adminControls');
+  const addMemberInput = document.getElementById('addMemberInput');
+  const addMemberBtn = document.getElementById('addMemberBtn');
+
+  // ─── Toast ────────────────────────────────────────────────────
+  function showToast(msg, dur = 3000) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => toast.classList.remove('show'), dur);
+  }
+
+  // ─── Map ──────────────────────────────────────────────────────
+  function initMap() {
+    map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+    map.userIcon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="background:#2563eb; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow:0 0 10px rgba(37,99,235,0.5);"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+  }
+
+  // ─── Update user marker ──────────────────────────────────────
+  function updateUserMarker(user) {
+    const { socketId, username, latitude, longitude, tripId } = user;
+    if (currentTripId && tripId !== currentTripId) {
+      if (markers[socketId]) {
+        map.removeLayer(markers[socketId]);
+        delete markers[socketId];
+      }
+      return;
+    }
+    if (markers[socketId]) map.removeLayer(markers[socketId]);
+    const marker = L.marker([latitude, longitude], { icon: map.userIcon })
+      .addTo(map)
+      .bindPopup(`<strong>${username}</strong>`);
+    markers[socketId] = marker;
+    if (allPaths[socketId] && allPaths[socketId].length > 1) {
+      if (polylines[socketId]) map.removeLayer(polylines[socketId]);
+      polylines[socketId] = L.polyline(allPaths[socketId], {
+        color: '#2563eb',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '5,5'
+      }).addTo(map);
+    }
+    activeCount.textContent = Object.keys(markers).length + ' active';
+  }
+
+  // ─── Socket ────────────────────────────────────────────────────
+  function setupSocket() {
+    socket = io();
+    socket.on('connect', () => showToast('Connected', 2000));
+    socket.on('disconnect', () => showToast('Disconnected', 3000));
+
+    socket.on('registered', (data) => {
+      registered = true;
+      showToast('Registered – tracking started', 2000);
+      startTracking();
+    });
+
+    socket.on('locationUpdate', (data) => {
+      if (currentTripId && data.tripId === currentTripId) {
+        updateUserMarker(data);
+      }
+    });
+
+    socket.on('userDisconnected', ({ socketId, username }) => {
+      if (markers[socketId]) {
+        map.removeLayer(markers[socketId]);
+        delete markers[socketId];
+      }
+      showToast(`${username} left`, 2000);
+      activeCount.textContent = Object.keys(markers).length + ' active';
+    });
+
+    socket.on('leaderboardUpdate', (data) => {
+      if (!data || !data.length) {
+        leaderboardList.innerHTML = '<p style="color:#94a3b8;">No members yet</p>';
+        return;
+      }
+      let html = '';
+      data.forEach((u, i) => {
+        const isActive = u.isActive;
+        const removeBtn = (isAdmin && u.username !== currentUser) ?
+          `<button class="remove-btn" onclick="removeMember('${u.username}')">✖</button>` :
+          '';
+        html += `
+          <div class="leaderboard-item ${isActive ? '' : 'inactive'}">
+            <div>
+              <span class="status-dot ${isActive ? 'active' : 'inactive'}"></span>
+              <span class="lb-name">#${i+1} ${u.username}</span>
+              ${removeBtn}
+            </div>
+            <div class="lb-stats">
+              <div class="dist">${u.distance.toFixed(2)} km</div>
+              <div>${u.steps.toLocaleString()} steps</div>
+            </div>
+          </div>
+        `;
+      });
+      leaderboardList.innerHTML = html;
+      // Update my distance
+      const me = data.find(u => u.username === currentUser);
+      if (me) {
+        myDistanceSpan.textContent = me.distance.toFixed(2);
+        myStepsSpan.textContent = me.steps.toLocaleString();
+      }
+      // Update member count
+      memberCount.textContent = data.length;
+    });
+
+    socket.on('allUsers', (users) => {
+      users.forEach(u => updateUserMarker(u));
+      activeCount.textContent = Object.keys(markers).length + ' active';
+    });
+
+    socket.on('userPath', ({ socketId, path }) => {
+      allPaths[socketId] = path;
+      if (markers[socketId] && path.length > 1) {
+        if (polylines[socketId]) map.removeLayer(polylines[socketId]);
+        polylines[socketId] = L.polyline(path, {
+          color: '#2563eb',
+          weight: 3,
+          opacity: 0.7,
+          dashArray: '5,5'
+        }).addTo(map);
+      }
+    });
+
+    socket.on('error', (data) => showToast('Error: ' + data.message, 4000));
+  }
+
+  // ─── Tracking ──────────────────────────────────────────────────
+  function startTracking() {
+    if (isTracking || !registered) return;
+    if (!navigator.geolocation) {
+      showToast('Geolocation not supported', 3000);
+      return;
+    }
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const newPos = { lat: latitude, lng: longitude };
+        if (lastPos) {
+          const d = haversine(lastPos.lat, lastPos.lng, newPos.lat, newPos.lng);
+          myDistance += d;
+          mySteps += Math.round(d / 0.000762);
+        }
+        lastPos = newPos;
+        socket.emit('updateLocation', { latitude, longitude });
+      },
+      (err) => console.warn('GPS error:', err),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+    isTracking = true;
+    console.log('📍 Tracking started');
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  // ─── Register and join trip ──────────────────────────────────
+  function registerToTrip() {
+    if (!navigator.geolocation) {
+      showToast('Geolocation not supported', 3000);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        socket.emit('register', { username: currentUser, latitude, longitude, tripId: currentTripId });
+        map.setView([latitude, longitude], 13);
+        socket.emit('getLeaderboard', currentTripId);
+      },
+      (err) => showToast('Location error: ' + err.message, 4000)
+    );
+  }
+
+  // ─── Admin functions ──────────────────────────────────────────
+  async function removeMember(targetUsername) {
+    if (!isAdmin) return;
+    if (!confirm(`Remove ${targetUsername} from trip?`)) return;
+    try {
+      const res = await fetch(`/api/trips/${currentTripId}/members`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUsername: currentUser })
+      });
+      // Need userId of target – we can find it from members array
+      const member = members.find(m => m.username === targetUsername);
+      if (!member) return showToast('Member not found', 3000);
+      const delRes = await fetch(`/api/trips/${currentTripId}/members/${member.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUsername: currentUser })
+      });
+      const data = await delRes.json();
+      if (delRes.ok) {
+        showToast(`${targetUsername} removed`, 2000);
+        // refresh leaderboard and members
+        socket.emit('getLeaderboard', currentTripId);
+        loadTripDetails();
+      } else {
+        showToast('Failed: ' + (data.error || 'error'), 3000);
+      }
+    } catch (err) {
+      showToast('Network error', 3000);
+    }
+  }
+
+  async function addMember() {
+    const targetUsername = addMemberInput.value.trim();
+    if (!targetUsername) return showToast('Enter a username', 3000);
+    try {
+      const res = await fetch(`/api/trips/${currentTripId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: targetUsername, adminUsername: currentUser })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`${targetUsername} added to trip`, 2000);
+        addMemberInput.value = '';
+        socket.emit('getLeaderboard', currentTripId);
+        loadTripDetails();
+      } else {
+        showToast('Failed: ' + (data.error || 'error'), 3000);
+      }
+    } catch (err) {
+      showToast('Network error', 3000);
+    }
+  }
+
+  // ─── Load trip details and admin status ──────────────────────
+  async function loadTripDetails() {
+    try {
+      const res = await fetch(`/api/trips/${currentTripId}`);
+      const trip = await res.json();
+      if (res.ok) {
+        tripNameHeader.textContent = trip.name;
+        tripDestHeader.textContent = trip.destination || '';
+        // Check if current user is admin
+        const userRes = await fetch(`/api/users/${currentUser}`);
+        const userData = await userRes.json();
+        if (userData && trip.created_by === userData.id) {
+          isAdmin = true;
+          adminControls.style.display = 'flex';
+        }
+        // Load members for admin removal
+        const membersRes = await fetch(`/api/trips/${currentTripId}/members`);
+        members = await membersRes.json();
+      }
+    } catch (err) {
+      console.error('Error loading trip details:', err);
+    }
+  }
+
+  // ─── Init ──────────────────────────────────────────────────────
+  initMap();
+  setupSocket();
+  loadTripDetails();
+
+  // Register to trip once socket is ready
+  setTimeout(() => {
+    registerToTrip();
+  }, 500);
+
+  // Admin controls
+  addMemberBtn.addEventListener('click', addMember);
+  addMemberInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') addMember(); });
+
+  // Expose removeMember to global scope for onclick
+  window.removeMember = removeMember;
+</script>
+</body>
+</html>

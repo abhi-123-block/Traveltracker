@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trip Tracker</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .landing {
+      text-align:center;
+      background:white;
+      padding:50px 40px;
+      border-radius:30px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.3);
+      max-width:400px;
+      width:100%;
+    }
+    .logo { font-size:64px; margin-bottom:10px; }
+    h1 { font-size:28px; color:#1a1a1a; margin-bottom:8px; }
+    p { color:#6b7280; margin-bottom:30px; }
+    .btn-group { display:flex; gap:15px; justify-content:center; }
+    .btn {
+      padding:12px 30px;
+      border:none;
+      border-radius:10px;
+      font-size:16px;
+      font-weight:600;
+      cursor:pointer;
+      transition:0.3s;
+      text-decoration:none;
+      display:inline-block;
+    }
+    .btn-primary { background:#2563eb; color:white; }
+    .btn-primary:hover { background:#1d4ed8; transform:translateY(-2px); }
+    .btn-secondary { background:#e5e7eb; color:#1a1a1a; }
+    .btn-secondary:hover { background:#d1d5db; transform:translateY(-2px); }
+  </style>
+</head>
+<body>
+  <div class="landing">
+    <div class="logo">🏕️</div>
+    <h1>Trip Tracker</h1>
+    <p>Track your group in real time</p>
+    <div class="btn-group">
+      <a href="/register" class="btn btn-primary">Register</a>
+      <a href="/login" class="btn btn-secondary">Login</a>
+    </div>
+  </div>
+</body>
+</html>

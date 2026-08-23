@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background:#f0f2f5;
+      padding:20px;
+      min-height:100vh;
+    }
+    .container {
+      max-width:800px;
+      margin:0 auto;
+    }
+    header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      background:white;
+      padding:20px 25px;
+      border-radius:16px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.05);
+      margin-bottom:30px;
+    }
+    header h1 { font-size:24px; }
+    header .user { font-weight:600; color:#2563eb; }
+    header .logout { color:#ef4444; cursor:pointer; font-weight:500; }
+    .actions {
+      display:flex;
+      gap:15px;
+      flex-wrap:wrap;
+      margin-bottom:30px;
+    }
+    .actions .card {
+      background:white;
+      padding:20px;
+      border-radius:16px;
+      flex:1;
+      min-width:200px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.05);
+      text-align:center;
+      cursor:pointer;
+      transition:0.3s;
+    }
+    .actions .card:hover { transform:translateY(-4px); box-shadow:0 8px 25px rgba(0,0,0,0.1); }
+    .actions .card .icon { font-size:40px; display:block; margin-bottom:10px; }
+    .actions .card h3 { margin-bottom:5px; }
+    .actions .card p { color:#6b7280; font-size:14px; }
+    .trips-section h2 { margin-bottom:15px; }
+    .trip-item {
+      background:white;
+      padding:15px 20px;
+      border-radius:12px;
+      margin-bottom:10px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      box-shadow:0 2px 6px rgba(0,0,0,0.05);
+      transition:0.2s;
+    }
+    .trip-item:hover { background:#f8f9fa; }
+    .trip-item .info { flex:1; }
+    .trip-item .info .name { font-weight:600; }
+    .trip-item .info .dest { color:#6b7280; font-size:14px; margin-left:8px; }
+    .trip-item .info .meta { font-size:13px; color:#94a3b8; margin-top:4px; }
+    .trip-item .btn { background:#2563eb; color:white; padding:8px 18px; border:none; border-radius:8px; cursor:pointer; transition:0.3s; }
+    .trip-item .btn:hover { background:#1d4ed8; }
+    .empty { color:#94a3b8; text-align:center; padding:30px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🏕️ Trip Tracker</h1>
+      <div>
+        <span class="user" id="usernameDisplay"></span>
+        <span class="logout" id="logoutBtn">Logout</span>
+      </div>
+    </header>
+
+    <div class="actions">
+      <div class="card" id="createTripCard">
+        <span class="icon">➕</span>
+        <h3>Create Trip</h3>
+        <p>Start a new group trip</p>
+      </div>
+      <div class="card" id="joinTripCard">
+        <span class="icon">🔗</span>
+        <h3>Join Trip</h3>
+        <p>Enter a trip ID</p>
+      </div>
+    </div>
+
+    <div class="trips-section">
+      <h2>Your Trips</h2>
+      <div id="tripsList">
+        <div class="empty">You are not in any trip yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const username = localStorage.getItem('username');
+    if (!username) {
+      window.location.href = '/';
+    }
+    document.getElementById('usernameDisplay').textContent = username;
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('username');
+      window.location.href = '/';
+    });
+
+    // Load trips
+    async function loadTrips() {
+      try {
+        const res = await fetch(`/api/users/${username}/trips`);
+        const trips = await res.json();
+        const container = document.getElementById('tripsList');
+        if (!trips || trips.length === 0) {
+          container.innerHTML = '<div class="empty">You are not in any trip yet.</div>';
+          return;
+        }
+        container.innerHTML = trips.map(t => `
+          <div class="trip-item">
+            <div class="info">
+              <span class="name">${t.name}</span>
+              <span class="dest">${t.destination || 'No destination'}</span>
+              <div class="meta">Created by ${t.creator_name || 'Unknown'} · ${new Date(t.created_at).toLocaleDateString()}</div>
+            </div>
+            <button class="btn" onclick="goToTrip(${t.id})">Open</button>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('Error loading trips:', err);
+      }
+    }
+
+    function goToTrip(tripId) {
+      window.location.href = `/trip?tripId=${tripId}`;
+    }
+
+    document.getElementById('createTripCard').addEventListener('click', () => {
+      const name = prompt('Enter trip name:');
+      if (!name) return;
+      const dest = prompt('Enter destination (optional):') || '';
+      const max = parseInt(prompt('Max participants (default 10):')) || 10;
+      fetch('/api/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, destination: dest, maxParticipants: max, username })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.tripId) {
+          alert('Trip created! ID: ' + data.tripId);
+          loadTrips(); // refresh list
+          // Optionally navigate to trip
+          if (confirm('Go to trip now?')) {
+            goToTrip(data.tripId);
+          }
+        } else {
+          alert('Failed: ' + (data.error || 'unknown error'));
+        }
+      })
+      .catch(() => alert('Network error'));
+    });
+
+    document.getElementById('joinTripCard').addEventListener('click', () => {
+      const tripId = prompt('Enter trip ID:');
+      if (!tripId) return;
+      fetch('/api/trips/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, tripId: parseInt(tripId) })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          alert('Joined trip!');
+          loadTrips();
+          if (confirm('Go to trip now?')) {
+            goToTrip(parseInt(tripId));
+          }
+        } else {
+          alert('Failed: ' + (data.error || 'unknown error'));
+        }
+      })
+      .catch(() => alert('Network error'));
+    });
+
+    loadTrips();
+  </script>
+</body>
+</html>
